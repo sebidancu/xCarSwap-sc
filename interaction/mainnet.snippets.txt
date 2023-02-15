@@ -1,0 +1,328 @@
+WASM_PATH="/Users/Sebi/ElrondSC/lotterylkmex/lotterynft/output/mylotterynft.wasm"
+BOB="/Users/Sebi/Bunny/lkmex-wallet.pem"
+
+ADDRESS=erd1qqqqqqqqqqqqqpgqzvvvh5f6ycv8h69p06q80mawk8rzzw2a3k9qhck3xk #$(erdpy data load --key=address-testnet)
+DEPLOY_TRANSACTION=$(erdpy data load --key=deployTransaction-testnet)
+PROXY=https://api.multiversx.com
+
+# ✓ 5% - Elrond Bunny NFTs Rewards - erd14xkt5ey728ns3a080j5garvr3ysuy843gefh585x4qhd5jkfehfqh6xe52 
+# ✓ 2% - Elrond Bunny Team - erd13qfgytath74hjda4d3qxywma5w6cl0hzzmuqy028e2zc3udp0mwsrthdt4
+# ✓ 2% - Elrond Lottery Marketing - erd10w6hhwd5kdafzfg8t96skxha6suepnfcx54epfasykv3x5yfqtnqmy4vlr
+# ✓ 1% - JEXchange Fees Wallet - erd1272et87h3sa7hlg5keuswh50guz2ngmd6lhmjxkwwu0ah6gdds5qhka964
+# VEGLD-2b9319
+
+# 10% -vegld erd1vj40fxw0yah34mmdxly7l28w097ju6hf8pczpcdxs05n2vyx8hcspyxm2c
+# 5% -echipa erd13qfgytath74hjda4d3qxywma5w6cl0hzzmuqy028e2zc3udp0mwsrthdt4
+# 5% -bunnys erd14xkt5ey728ns3a080j5garvr3ysuy843gefh585x4qhd5jkfehfqh6xe52
+
+
+DEPLOY_GAS="80000000"
+TARGET=500000000000000000
+DEADLINE_UNIX_TIMESTAMP=1651066120  # Fri Jan 01 2021 00:00:00 GMT+0200 (Eastern European Standard Time)
+EGLD_TOKEN_ID=0x45474c44 # "EGLD"
+
+deploy() {
+    local MAXTICKETPRICEPERWALLET=0x14 # 20
+    local TICKETPRICE=0x021E19E0C9BAB2400000 # 10k lkmex
+    local MAXTICKETSPERLOTTERY=0x03E8 # 1000
+
+    erdpy --verbose contract deploy --project=${PROJECT} --recall-nonce --pem=${BOB} \
+          --gas-limit=${DEPLOY_GAS} \
+          --outfile="/Users/Sebi/ElrondSC/lotterynft/deploy-testnet.interaction.json" --send --proxy=${PROXY} --chain=1 --arguments ${MAXTICKETPRICEPERWALLET} ${TICKETPRICE} ${MAXTICKETSPERLOTTERY} || return
+
+    TRANSACTION=$(erdpy data parse --file="deploy-testnet.interaction.json" --expression="data['emittedTransactionHash']")
+    ADDRESS=$(erdpy data parse --file="deploy-testnet.interaction.json" --expression="data['contractAddress']")
+
+    erdpy data store --key=address-testnet --value=${ADDRESS}
+    erdpy data store --key=deployTransaction-testnet --value=${TRANSACTION}
+
+    echo ""
+    echo "Smart contract address: ${ADDRESS}"
+}
+
+upgradeSC() {
+    local MAXTICKETPRICEPERWALLET=0x14 # 20
+    local TICKETPRICE=0x015AF1D78B58C40000 # 25k lkmex
+    local MAXTICKETSPERLOTTERY=0x3E8 # 1000
+    local TOKEN_ID=0x4c4b4d45582d616162393130 #LKMEX-aab910
+
+    erdpy --verbose contract upgrade ${ADDRESS} --recall-nonce \
+        --bytecode=${WASM_PATH} \
+        --pem=${BOB} \
+        --gas-limit=60000000 \
+        --proxy=${PROXY} --chain=1 \
+        --arguments ${MAXTICKETPRICEPERWALLET} ${TICKETPRICE} ${MAXTICKETSPERLOTTERY} ${TOKEN_ID} \
+        --send || return
+}
+
+checkDeployment() {
+    erdpy tx get --hash=$DEPLOY_TRANSACTION --omit-fields="['data', 'signature']" --proxy=${PROXY}
+    erdpy account get --address=$ADDRESS --omit-fields="['code']" --proxy=${PROXY}
+}
+
+# BOB claims
+startlottery() {
+    erdpy --verbose contract call ${ADDRESS} --recall-nonce --pem=${BOB} --gas-limit=30000000 \
+        --function="start_lottery" \
+        --proxy=${PROXY} --chain=1 \
+        --send
+}
+
+change_tokenid(){
+    erdpy --verbose contract call ${ADDRESS} --recall-nonce --pem=${BOB} --gas-limit=10000000 \
+        --function="change_token_id" \
+        --proxy=${PROXY} --chain=1 \
+        --arguments 0x5645474c442d326239333139 \
+        --send
+}
+
+setMarketingWallet() {
+    local BOB_ADDRESS_BECH32=erd1vj40fxw0yah34mmdxly7l28w097ju6hf8pczpcdxs05n2vyx8hcspyxm2c
+    local BOB_ADDRESS_HEX=0x$(erdpy wallet bech32 --decode ${BOB_ADDRESS_BECH32})
+    erdpy --verbose contract call ${ADDRESS} --recall-nonce --pem=${BOB} --gas-limit=10000000 \
+        --function="setmarketingwallet" \
+        --proxy=${PROXY} --chain=1 \
+        --arguments ${BOB_ADDRESS_HEX} \
+        --send
+}
+
+setTeam() {
+    local BOB_ADDRESS_BECH32=erd13qfgytath74hjda4d3qxywma5w6cl0hzzmuqy028e2zc3udp0mwsrthdt4
+    local BOB_ADDRESS_HEX=0x$(erdpy wallet bech32 --decode ${BOB_ADDRESS_BECH32})
+    erdpy --verbose contract call ${ADDRESS} --recall-nonce --pem=${BOB} --gas-limit=10000000 \
+        --function="setteamwallet" \
+        --proxy=${PROXY} --chain=1 \
+        --arguments ${BOB_ADDRESS_HEX} \
+        --send
+}
+
+setNftHolders() {
+    local BOB_ADDRESS_BECH32=erd14xkt5ey728ns3a080j5garvr3ysuy843gefh585x4qhd5jkfehfqh6xe52
+    local BOB_ADDRESS_HEX=0x$(erdpy wallet bech32 --decode ${BOB_ADDRESS_BECH32})
+    erdpy --verbose contract call ${ADDRESS} --recall-nonce --pem=${BOB} --gas-limit=10000000 \
+        --function="setnftwallet" \
+        --proxy=${PROXY} --chain=1 \
+        --arguments ${BOB_ADDRESS_HEX} \
+        --send
+}
+
+# setecfwallet() {
+#     local BOB_ADDRESS_BECH32=erd1qhymgtkzlp2ej74qspz4cxvpu5wcsljq6euawh4z42ur5anvdqps8qvgvk
+#     local BOB_ADDRESS_HEX=0x$(erdpy wallet bech32 --decode ${BOB_ADDRESS_BECH32})
+#     erdpy --verbose contract call ${ADDRESS} --recall-nonce --pem=${BOB} --gas-limit=10000000 \
+#         --function="setecfwallet" \
+#         --proxy=${PROXY} --chain=1 \
+#         --arguments ${BOB_ADDRESS_HEX} \
+#         --send
+# }
+
+clean_winners(){
+    erdpy --verbose contract call ${ADDRESS} --recall-nonce --pem=${BOB} --gas-limit=10000000 \
+        --function="clean_counter" \
+        --proxy=${PROXY} --chain=1 \
+        --send
+}
+
+# setecfwallet() {
+#     local BOB_ADDRESS_BECH32=erd1qhymgtkzlp2ej74qspz4cxvpu5wcsljq6euawh4z42ur5anvdqps8qvgvk
+#     local BOB_ADDRESS_HEX=0x$(erdpy wallet bech32 --decode ${BOB_ADDRESS_BECH32})
+#     erdpy --verbose contract call ${ADDRESS} --recall-nonce --pem=${BOB} --gas-limit=10000000 \
+#         --function="setecfwallet" \
+#         --proxy=${PROXY} --chain=1 \
+#         --arguments ${BOB_ADDRESS_HEX} \
+#         --send
+# }
+
+# setardawallet() {
+#     local BOB_ADDRESS_BECH32=erd17depxrs8e7jznrgy05ssk4578n8p3hp3l4m5uhx7vmnltwzm3g6s5ztg0x
+#     local BOB_ADDRESS_HEX=0x$(erdpy wallet bech32 --decode ${BOB_ADDRESS_BECH32})
+#     erdpy --verbose contract call ${ADDRESS} --recall-nonce --pem=${BOB} --gas-limit=10000000 \
+#         --function="setardawallet" \
+#         --proxy=${PROXY} --chain=1 \
+#         --arguments ${BOB_ADDRESS_HEX} \
+#         --send
+# }
+
+setownerwallet() {
+    local BOB_ADDRESS_BECH32=erd15w9l8n5z2zltmgwdpdwf5ythc66st9nkwv33mhvxl4k078t63k9qa8wauy
+    local BOB_ADDRESS_HEX=0x$(erdpy wallet bech32 --decode ${BOB_ADDRESS_BECH32})
+    erdpy --verbose contract call ${ADDRESS} --recall-nonce --pem=${BOB} --gas-limit=10000000 \
+        --function="setowner" \
+        --proxy=${PROXY} --chain=1 \
+        --arguments ${BOB_ADDRESS_HEX} \
+        --send
+}
+
+setMaxTicket() {
+    erdpy --verbose contract call ${ADDRESS} --recall-nonce --pem=${BOB} --gas-limit=10000000 \
+        --function="set_maxtickets_per_wallet" \
+        --proxy=${PROXY} --chain=1 \
+        --arguments 1000 \
+        --send
+}
+
+setPrice_nou() {
+    erdpy --verbose contract call ${ADDRESS} --recall-nonce --pem=${BOB} --gas-limit=10000000 \
+        --function="set_price" \
+        --proxy=${PROXY} --chain=1 \
+        --arguments 25000000000000000 \
+        --send
+}
+
+set_Deadline() {
+    erdpy --verbose contract call ${ADDRESS} --recall-nonce --pem=${BOB} --gas-limit=20000000 \
+        --function="set_deadline" \
+        --proxy=${PROXY} --chain=1 \
+        --arguments 604800 \
+        --send
+}
+
+setPrize() {
+    erdpy --verbose contract call ${ADDRESS} --recall-nonce --pem=${BOB} --gas-limit=10000000 \
+        --function="set_prizepool" \
+        --proxy=${PROXY} --chain=1 \
+        --arguments 6250000000000000000 \
+        --send
+}
+
+fund_sc() {
+    erdpy --verbose contract call ${ADDRESS} --recall-nonce --pem=${BOB} --gas-limit=10000000 \
+        --function="fund" --value=5000000000000000000\
+        --proxy=${PROXY} --chain=1 \
+        --send
+}
+
+set_maxtickets_per_lottery() {
+    erdpy --verbose contract call ${ADDRESS} --recall-nonce --pem=${BOB} --gas-limit=10000000 \
+        --function="set_maxtickets_per_lottery" \
+        --proxy=${PROXY} --chain=1 \
+        --arguments 3000 \
+        --send
+}
+
+# BOB sends funds
+buyTicket_BOB() {
+    erdpy --verbose contract call $ADDRESS --recall-nonce --pem=${BOB} --gas-limit=20000000 \
+        --function="buy_ticket" --value=100000000000000000 \
+        --proxy=${PROXY} --chain=1 \
+        --arguments 1 \
+        --send
+}
+
+buyBOB() {
+    erdpy --verbose contract call $ADDRESS --recall-nonce --pem=${BOB} --gas-limit=20000000 \
+        --function="buy_ticket" --value=200000000000000000 \
+        --proxy=${PROXY} --chain=1 \
+        --arguments 2 \
+        --send
+}
+
+getCounter() {
+    erdpy --verbose contract query ${ADDRESS} --function="getCounterTickets" --proxy=${PROXY} 
+}
+
+getVolume() {
+    erdpy --verbose contract query ${ADDRESS} --function="getVolume" --proxy=${PROXY} 
+}
+
+getAllWinners() {
+    erdpy --verbose contract query ${ADDRESS} --function="getAllWinners" --proxy=${PROXY} 
+}
+
+getTicketHolderUnique() {
+    erdpy --verbose contract query ${ADDRESS} --function="getTicketHolderUnique" --proxy=${PROXY} 
+}
+
+
+winner() {
+    erdpy --verbose contract call $ADDRESS --recall-nonce --pem=${BOB} --gas-limit=35000000 \
+        --function="winner" --value=0 \
+        --proxy=${PROXY} --chain=1 \
+        --send \
+}
+
+getTicketsPerAddress() {
+    local BOB_ADDRESS_BECH32=erd1a8jaysc9aadaa57nm26nyz4euj994fsmmrkjpp2zg53gn3alj0wqls7f96
+    local BOB_ADDRESS_HEX=0x$(erdpy wallet bech32 --decode ${BOB_ADDRESS_BECH32})
+    erdpy --verbose contract query ${ADDRESS} --function="getTicketsPerAddress" --proxy=${PROXY} --arguments ${BOB_ADDRESS_HEX} 378 \
+}
+
+getCurrentFunds() {
+    erdpy --verbose contract query ${ADDRESS} --function="getCurrentFunds" --proxy=${PROXY} 
+}
+
+getTime() {
+    erdpy --verbose contract query ${ADDRESS} --function="getTime" --proxy=${PROXY} 
+}
+
+
+getTicketPrice() {
+    erdpy --verbose contract query ${ADDRESS} --function="getTicketPrice" --proxy=${PROXY} 
+}
+
+getDeadline() {
+    erdpy --verbose contract query ${ADDRESS} --function="getDeadline" --proxy=${PROXY} 
+}
+
+getPrize() {
+    erdpy --verbose contract query ${ADDRESS} --function="getPrize" --proxy=${PROXY}
+}
+
+getTicketHolder() {
+    erdpy --verbose contract query ${ADDRESS} --function="getTicketHolder" --proxy=${PROXY}
+}
+
+getMaxTicketsPerAddress() {
+    erdpy --verbose contract query ${ADDRESS} --function="getMaxTicketsPerAddress" --proxy=${PROXY}
+}
+
+claimFunds() {
+    erdpy --verbose contract call $ADDRESS --recall-nonce --pem=${BOB} --gas-limit=10000000 \
+        --function="claimfunds" \
+        --proxy=${PROXY} --chain=1 \
+        --send
+}
+
+ChangeOwner(){
+    erdpy --verbose contract call $ADDRESS --recall-nonce --pem=${BOB} --gas-limit=10000000 \
+        --function=ChangeOwnerAddress \
+        --proxy=${PROXY} --chain=1 \
+        --arguments erd1lz29ug45hy975wjjjey4aupwmzxycgx5kavajmray9ezh22uhtfs2a3gl0 \
+        --send
+}
+
+getCounterTickets() {
+    erdpy --verbose contract query ${ADDRESS} --function="getCounterTickets" --proxy=${PROXY} 
+}
+
+getCounterLottery() {
+    erdpy --verbose contract query ${ADDRESS} --function="getCounterLottery" --proxy=${PROXY} 
+}
+
+getVolume() {
+    erdpy --verbose contract query ${ADDRESS} --function="getVolume" --proxy=${PROXY} 
+}
+
+getWinners() {
+    erdpy --verbose contract query ${ADDRESS} --function="getWinners" --proxy=${PROXY} 
+}
+
+getAllWinners() {
+    erdpy --verbose contract query ${ADDRESS} --function="getAllWinners" --proxy=${PROXY} 
+}
+
+getTicketHolderUnique() {
+    erdpy --verbose contract query ${ADDRESS} --function="getTicketHolderUnique" --proxy=${PROXY} 
+}
+#1654611120
+get_Last_Winners() {
+    erdpy --verbose contract query ${ADDRESS} --function="getLastWinners" --proxy=${PROXY} --arguments 1 \
+}
+
+getNoncesLkmex(){
+    erdpy --verbose contract query ${ADDRESS} --function="getNoncesLkmex" --proxy=${PROXY} \
+}
+
+getTokenId(){
+    erdpy --verbose contract query ${ADDRESS} --function="getTokenId" --proxy=${PROXY} \
+}
