@@ -6,3 +6,4 @@
 **/*.interaction.json
 **/target/**
 **/backup.txt
+**/interaction
